@@ -1,0 +1,193 @@
+{
+    "1": {
+        "id": 1,
+        "name": "ПАО \"МАГНИТ\"",
+        "prob": 0.24941666666666668,
+        "loss_min": 10916.666666666666,
+        "loss_max": 133000.0,
+        "severity": 2.9583333333333335,
+        "parent_id": null,
+        "children": [
+            2,
+            3,
+            4,
+            5
+        ]
+    },
+    "2": {
+        "id": 2,
+        "name": "г. Москва",
+        "prob": 0.092,
+        "loss_min": 14000.0,
+        "loss_max": 140000.0,
+        "severity": 3.1,
+        "parent_id": 1,
+        "children": [
+            6,
+            7,
+            8,
+            9
+        ]
+    },
+    "3": {
+        "id": 3,
+        "name": "г. Санкт-Петербург",
+        "prob": 0.28900000000000003,
+        "loss_min": 12000.0,
+        "loss_max": 162000.0,
+        "severity": 2.9,
+        "parent_id": 1,
+        "children": [
+            10,
+            11,
+            12,
+            13
+        ]
+    },
+    "4": {
+        "id": 4,
+        "name": "г. Новосибирск",
+        "prob": 0.31666666666666665,
+        "loss_min": 11666.666666666666,
+        "loss_max": 200000.0,
+        "severity": 2.8333333333333335,
+        "parent_id": 1,
+        "children": [
+            14,
+            15
+        ]
+    },
+    "5": {
+        "id": 5,
+        "name": "г. Абакан",
+        "prob": 0.3,
+        "loss_min": 6000.0,
+        "loss_max": 30000.0,
+        "severity": 3.0,
+        "parent_id": 1,
+        "children": [
+            23,
+            24
+        ]
+    },
+    "6": {
+        "id": 6,
+        "name": "Спортивный проезд, 5",
+        "prob": 0.05,
+        "loss_min": 10000.0,
+        "loss_max": 100000.0,
+        "severity": 3.0,
+        "parent_id": 2,
+        "children": []
+    },
+    "7": {
+        "id": 7,
+        "name": "Игральная улица, 10",
+        "prob": 0.1,
+        "loss_min": 15000.0,
+        "loss_max": 150000.0,
+        "severity": 4.5,
+        "parent_id": 2,
+        "children": []
+    },
+    "8": {
+        "id": 8,
+        "name": "Алтуфьевское шоссе, 85",
+        "prob": 0.01,
+        "loss_min": 20000.0,
+        "loss_max": 200000.0,
+        "severity": 3.0,
+        "parent_id": 2,
+        "children": []
+    },
+    "9": {
+        "id": 9,
+        "name": "Волгоградский проспект, 185/19",
+        "prob": 0.3,
+        "loss_min": 25000.0,
+        "loss_max": 250000.0,
+        "severity": 4.0,
+        "parent_id": 2,
+        "children": []
+    },
+    "10": {
+        "id": 10,
+        "name": "проспект Екатерининский, 2А",
+        "prob": 0.7,
+        "loss_min": 10000.0,
+        "loss_max": 150000.0,
+        "severity": 4.0,
+        "parent_id": 3,
+        "children": []
+    },
+    "11": {
+        "id": 11,
+        "name": "ул. Александра Матросова, 20",
+        "prob": 0.345,
+        "loss_min": 20000.0,
+        "loss_max": 500000.0,
+        "severity": 4.5,
+        "parent_id": 3,
+        "children": []
+    },
+    "12": {
+        "id": 12,
+        "name": "ул. Борисова, 4",
+        "prob": 0.35,
+        "loss_min": 20000.0,
+        "loss_max": 60000.0,
+        "severity": 2.0,
+        "parent_id": 3,
+        "children": []
+    },
+    "13": {
+        "id": 13,
+        "name": "ул. Токарева, 8",
+        "prob": 0.05,
+        "loss_min": 10000.0,
+        "loss_max": 100000.0,
+        "severity": 3.0,
+        "parent_id": 3,
+        "children": []
+    },
+    "14": {
+        "id": 14,
+        "name": "Вокзальная магистраль, 1",
+        "prob": 0.5,
+        "loss_min": 10000.0,
+        "loss_max": 100000.0,
+        "severity": 3.0,
+        "parent_id": 4,
+        "children": []
+    },
+    "15": {
+        "id": 15,
+        "name": "ул. Гоголя, 51",
+        "prob": 0.45,
+        "loss_min": 25000.0,
+        "loss_max": 500000.0,
+        "severity": 4.5,
+        "parent_id": 4,
+        "children": []
+    },
+    "23": {
+        "id": 23,
+        "name": "ул. Пушкина, 100",
+        "prob": 0.25,
+        "loss_min": 5000.0,
+        "loss_max": 35000.0,
+        "severity": 3.0,
+        "parent_id": 5,
+        "children": []
+    },
+    "24": {
+        "id": 24,
+        "name": "ул. Ленина, 77",
+        "prob": 0.35,
+        "loss_min": 7000.0,
+        "loss_max": 25000.0,
+        "severity": 3.0,
+        "parent_id": 5,
+        "children": []
+    }
+}
