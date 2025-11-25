@@ -20,43 +20,93 @@ def _init_style(app):
     text_secondary = "#4b5563"
     border_color = "#e5e7eb"
 
+    # фон всего окна
     app.root.configure(bg=bg_root)
 
-    style.configure("Card.TFrame", background=card_bg, relief="flat", borderwidth=1)
+    # белая верхняя панель
+    style.configure("TopPanel.TFrame", background=card_bg)
+
+    # существующие стили
+    style.configure("Card.TFrame", background=card_bg)
     style.configure("Main.TFrame", background=bg_root)
     style.configure("Title.TLabel", background=card_bg, foreground=text_main, font=("Segoe UI",14,"bold"))
     style.configure("Section.TLabel", background=card_bg, foreground=text_secondary, font=("Segoe UI",10,"bold"))
     style.configure("TLabel", background=card_bg, foreground=text_secondary, font=("Segoe UI",9))
     style.configure("TEntry", padding=4)
-    style.configure("Accent.TButton", background=accent, foreground="white", font=("Segoe UI",9,"bold"), padding=6, borderwidth=0)
-    style.map("Accent.TButton", background=[("active", accent_hover), ("pressed", accent_hover)])
-    style.configure("Ghost.TButton", background=card_bg, foreground=accent, font=("Segoe UI",9), padding=5, borderwidth=1, relief="solid")
+
+    style.configure("Accent.TButton", background=accent, foreground="white",
+                    font=("Segoe UI",9,"bold"), padding=6, borderwidth=0)
+    style.map("Accent.TButton", background=[("active", accent_hover)])
+
+    style.configure("Ghost.TButton", background=card_bg, foreground=accent,
+                    font=("Segoe UI",9), padding=5, borderwidth=1, relief="solid")
     style.map("Ghost.TButton", background=[("active", "#fff1f2")])
-    style.configure("Danger.TButton", background="#ef4444", foreground="white", font=("Segoe UI",9,"bold"), padding=5, borderwidth=0)
+
+    style.configure("Danger.TButton", background="#ef4444", foreground="white",
+                    font=("Segoe UI",9,"bold"), padding=5, borderwidth=0)
     style.map("Danger.TButton", background=[("active", "#dc2626")])
-    style.configure("Treeview", background=card_bg, fieldbackground=card_bg, foreground=text_main, rowheight=22, bordercolor=border_color, borderwidth=1, font=("Segoe UI",9))
-    style.configure("Treeview.Heading", background="#f3f4f6", foreground=text_secondary, font=("Segoe UI",9,"bold"))
+
+    # дерево
+    style.configure("Treeview", background=card_bg, fieldbackground=card_bg,
+                    foreground=text_main, rowheight=22, bordercolor=border_color, borderwidth=1)
+    style.configure("Treeview.Heading", background="#f3f4f6",
+                    foreground=text_secondary, font=("Segoe UI",9,"bold"))
+
 
 # ----------------- Вспомогательные функции -----------------
 def _refresh_tree(app):
+    # 1. Сохранить открытые узлы
+    open_items = set()
+
+    def collect(item):
+        if app.tree.item(item, "open"):
+            open_items.add(item)
+        for c in app.tree.get_children(item):
+            collect(c)
+
+    for i in app.tree.get_children():
+        collect(i)
+
+    # 2. Сохранить выделение
+    old_selection = app.tree.selection()
+
+    # 3. Очистить
     for item in app.tree.get_children():
         app.tree.delete(item)
     app.item_to_id.clear()
     app.id_to_item.clear()
 
-    def insert_node_rec(node_id, parent_item=""):
+    # 4. Вставка рекурсивно
+    def insert(node_id, parent=""):
         node = app.nodes[node_id]
-        item = app.tree.insert(parent_item, "end", text=node.name,
-            values=(f"{node.prob}",f"{node.loss_min}",f"{node.loss_max}","0.00","0.00",f"{node.severity}","0.00"))
+        item = app.tree.insert(
+            parent, "end", text=node.name,
+            values=(f"{node.prob:.3f}", f"{node.loss_min:.2f}", f"{node.loss_max:.2f}",
+                    f"{(node.prob or 0.0)*(node.loss_min or 0.0):.2f}",
+                    f"{(node.prob or 0.0)*(node.loss_max or 0.0):.2f}",
+                    f"{node.severity:.1f}",
+                    f"{(node.prob or 0.0)*(node.severity or 1.0):.2f}")
+        )
         app.item_to_id[item] = node_id
         app.id_to_item[node_id] = item
         for cid in node.children:
-            insert_node_rec(cid, item)
-    insert_node_rec(1)
+            insert(cid, item)
+        # восстанавливаем раскрытие
+        if node_id in open_items:
+            app.tree.item(item, open=True)
+
+    insert(1)
+
+    # 5. Восстановить выделение
+    if old_selection:
+        try:
+            app.tree.selection_set(old_selection)
+        except Exception:
+            pass
+
+    # 6. Пересчёт и обновление итогов
     _recalc_and_update_tree(app)
     _update_total_label(app)
-    if app.selected_id in app.id_to_item:
-        app.tree.selection_set(app.id_to_item[app.selected_id])
 
 def _recalc_and_update_tree(app):
     def update_node_rec(node_id):
@@ -103,10 +153,22 @@ def _sync_inputs_with_selection(app):
 
 # ----------------- Дерево -----------------
 def _build_treeview(app):
-    columns = ("P","Lmin","Lmax","Lower","Upper","Severity","Risk")
+    columns = ("P", "Lmin", "Lmax", "Lower", "Upper", "Severity", "Risk")
+    headers = {
+        "P": "Вероятность",
+        "Lmin": "Мин. потери",
+        "Lmax": "Макс. потери",
+        "Lower": "Lower",
+        "Upper": "Upper",
+        "Severity": "Тяжесть",
+        "Risk": "Риск"
+    }
+
     app.tree = ttk.Treeview(app.right_frame, columns=columns, show="tree headings", height=20)
+
     for col in columns:
-        app.tree.heading(col, text=col)
+        app.tree.heading(col, text=headers[col])
+
     app.tree.heading("#0", text="Объект")
     app.tree.column("#0", width=260, anchor="w")
     app.tree.column("P", width=60, anchor="center")
@@ -251,106 +313,104 @@ def on_report(app):
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
 
-# ----------------- Основной UI -----------------
 def build_ui(app):
-    # Основной фрейм
-    main_frame = ttk.Frame(app.root, style="Main.TFrame")
-    main_frame.pack(fill="both", expand=True, padx=16, pady=16)
-    main_frame.columnconfigure(0, weight=0)
-    main_frame.columnconfigure(1, weight=1)
-    main_frame.rowconfigure(0, weight=1)
+    main_frame = ttk.Frame(app.root)
+    main_frame.pack(fill="both", expand=True)
+    main_frame.rowconfigure(1, weight=1)
+    main_frame.columnconfigure(0, weight=1)
 
-    # Левая панель
-    left_card = ttk.Frame(main_frame, style="Card.TFrame")
-    left_card.grid(row=0, column=0, sticky="nsw", padx=(0,12))
-    left_inner = ttk.Frame(left_card, style="Card.TFrame", padding=12)
-    left_inner.pack(fill="both", expand=True)
+    # -------------------- ВЕРХНЯЯ ПАНЕЛЬ --------------------
+    top_panel = ttk.Frame(main_frame, padding=12, style="TopPanel.TFrame")
+    top_panel.grid(row=0, column=0, sticky="new")
+    top_panel.columnconfigure((0,1,2,3), weight=1)  # 4 раздела горизонтально
 
-    # Правая панель
-    right_card = ttk.Frame(main_frame, style="Card.TFrame")
-    right_card.grid(row=0, column=1, sticky="nsew", padx=(12,0))
-    right_inner = ttk.Frame(right_card, style="Card.TFrame", padding=8)
-    right_inner.pack(fill="both", expand=True)
-    app.right_frame = right_inner
+    ttk.Label(top_panel, text='Риск-анализатор ПАО "МАГНИТ"', style="Title.TLabel")\
+        .grid(row=0, column=0, columnspan=4, sticky="w", pady=(0,8))
 
-    # Заголовки
-    ttk.Label(left_inner, text='Риск-анализатор ПАО "МАГНИТ"', style="Title.TLabel").pack(anchor="w", pady=(0,8))
-    ttk.Label(left_inner, text="Управление структурой объектов", style="Section.TLabel").pack(anchor="w")
-
-    # Поле названия узла
-    app.entry_name = ttk.Entry(left_inner, width=30)
-    app.entry_name.pack(fill="x", pady=(4,2))
+    # ----------- 1. Управление -----------
+    frame_manage = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
+    frame_manage.grid(row=1, column=0, sticky="nwe", padx=4)
+    frame_manage.columnconfigure(0, weight=1)
+    ttk.Label(frame_manage, text="Управление структурой объектов", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+    app.entry_name = ttk.Entry(frame_manage)
+    app.entry_name.grid(row=1, column=0, sticky="we", pady=2)
     app.entry_name.insert(0, "Новый объект/система")
+    ttk.Button(frame_manage, text="Добавить", style="Accent.TButton", command=lambda: on_add(app)).grid(row=2, column=0, sticky="we", pady=1)
+    ttk.Button(frame_manage, text="Переименовать", style="Ghost.TButton", command=lambda: on_rename(app)).grid(row=3, column=0, sticky="we", pady=1)
+    ttk.Button(frame_manage, text="Удалить выбранный", style="Danger.TButton", command=lambda: on_delete(app)).grid(row=4, column=0, sticky="we", pady=1)
 
-    # Кнопки добавить / переименовать
-    struct_btn_row = ttk.Frame(left_inner, style="Card.TFrame")
-    struct_btn_row.pack(fill="x", pady=(2,4))
-    ttk.Button(struct_btn_row, text="Добавить", style="Accent.TButton", command=lambda: on_add(app)).pack(side="left", expand=True, fill="x", padx=(0,3))
-    ttk.Button(struct_btn_row, text="Переименовать", style="Ghost.TButton", command=lambda: on_rename(app)).pack(side="left", expand=True, fill="x", padx=(3,0))
+    # ----------- 2. Параметры -----------
+    frame_params = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
+    frame_params.grid(row=1, column=1, sticky="nwe", padx=4)
+    frame_params.columnconfigure(0, weight=1)
+    ttk.Label(frame_params, text="Параметры риска", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+    app.entry_prob = ttk.Entry(frame_params); app.entry_prob.grid(row=1, column=0, sticky="we", pady=1)
+    app.entry_loss_min = ttk.Entry(frame_params); app.entry_loss_min.grid(row=2, column=0, sticky="we", pady=1)
+    app.entry_loss_max = ttk.Entry(frame_params); app.entry_loss_max.grid(row=3, column=0, sticky="we", pady=1)
+    app.entry_severity = ttk.Entry(frame_params); app.entry_severity.grid(row=4, column=0, sticky="we", pady=1)
+    app.btn_save_risk = ttk.Button(frame_params, text="Сохранить параметры", style="Accent.TButton", command=lambda: on_save_risk(app))
+    app.btn_save_risk.grid(row=5, column=0, sticky="we", pady=2)
+    app.label_root_hint = ttk.Label(frame_params, text="Для корневого узла параметры риска не задаются", foreground="#9ca3af", background="#ffffff", wraplength=150)
+    app.label_root_hint.grid(row=6, column=0, sticky="w", pady=2)
 
-    # Кнопка удалить
-    ttk.Button(left_inner, text="Удалить выбранный", style="Danger.TButton", command=lambda: on_delete(app)).pack(fill="x", pady=(2,6))
-
-    # Раздел: параметры риска
-    ttk.Separator(left_inner, orient="horizontal").pack(fill="x", pady=8)
-    ttk.Label(left_inner, text="Параметры риска", style="Section.TLabel").pack(anchor="w")
-    app.entry_prob = ttk.Entry(left_inner); app.entry_prob.pack(fill="x", pady=2); app.entry_prob.insert(0,"0")
-    app.entry_loss_min = ttk.Entry(left_inner); app.entry_loss_min.pack(fill="x", pady=2); app.entry_loss_min.insert(0,"0")
-    app.entry_loss_max = ttk.Entry(left_inner); app.entry_loss_max.pack(fill="x", pady=2); app.entry_loss_max.insert(0,"0")
-    app.entry_severity = ttk.Entry(left_inner); app.entry_severity.pack(fill="x", pady=2); app.entry_severity.insert(0,"1")
-    app.btn_save_risk = ttk.Button(left_inner, text="Сохранить параметры", style="Accent.TButton", command=lambda: on_save_risk(app))
-    app.btn_save_risk.pack(fill="x", pady=(6,4))
-    app.label_root_hint = ttk.Label(left_inner, text="Для корневого узла параметры риска не задаются", foreground="#9ca3af", background="#ffffff", wraplength=260)
-    app.label_root_hint.pack(anchor="w", pady=(2,0))
-
-    # Итоговая оценка
-    ttk.Separator(left_inner, orient="horizontal").pack(fill="x", pady=8)
-    ttk.Label(left_inner, text="Итоговая оценка группы Магнит", style="Section.TLabel").pack(anchor="w")
-    app.label_total = ttk.Label(left_inner, text="ΣLower: 0.00 руб.\nΣUpper: 0.00 руб.", font=("Segoe UI",10,"bold"), background="#ffffff", foreground="#111827", wraplength=260)
-    app.label_total.pack(anchor="w", pady=(4,4))
-
-    # PDF
-    ttk.Separator(left_inner, orient="horizontal").pack(fill="x", pady=8)
-    ttk.Label(left_inner, text="Генерация отчёта", style="Section.TLabel").pack(anchor="w")
-    ttk.Button(left_inner, text="Сделать отчёт (PDF)", style="Accent.TButton", command=lambda: on_report(app)).pack(fill="x", pady=(6,2))
+    # ----------- 3. Генерация отчёта -----------
+    frame_report = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
+    frame_report.grid(row=1, column=2, sticky="nwe", padx=4)
+    frame_report.columnconfigure(0, weight=1)
+    ttk.Label(frame_report, text="Генерация отчёта", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+    ttk.Button(frame_report, text="Сделать отчёт (PDF)", style="Accent.TButton", command=lambda: on_report(app)).grid(row=1, column=0, sticky="we", pady=2)
     if not REPORTLAB_AVAILABLE:
-        ttk.Label(left_inner, text="(для PDF установите пакет reportlab)", foreground="#dc2626", background="#ffffff", wraplength=260).pack(anchor="w", pady=(2,0))
+        ttk.Label(frame_report, text="(для PDF установите reportlab)", foreground="#dc2626", background="#ffffff").grid(row=2, column=0, sticky="w")
 
-    # Строим дерево
+    # ----------- 4. Итоговая оценка -----------
+    frame_total = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
+    frame_total.grid(row=1, column=3, sticky="nwe", padx=4)
+    frame_total.columnconfigure(0, weight=1)
+    ttk.Label(frame_total, text="Итоговая оценка группы", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+    app.label_total = ttk.Label(frame_total, text="ΣLower: 0.00 руб.\nΣUpper: 0.00 руб.", font=("Segoe UI",10,"bold"), background="#ffffff", foreground="#111827")
+    app.label_total.grid(row=1, column=0, sticky="w", pady=2)
+
+    # -------------------- НИЖНЯЯ ПАНЕЛЬ (дерево) --------------------
+    bottom_panel = ttk.Frame(main_frame, padding=10)
+    bottom_panel.grid(row=1, column=0, sticky="nsew")
+    app.right_frame = bottom_panel
     _build_treeview(app)
     enable_tree_sorting(app.tree)
 
-    # Синхронизация при выборе
     app.tree.bind("<<TreeviewSelect>>", lambda e: on_select(app))
     on_select(app)
 
-# ----------------- Сортировка по колонкам Treeview -----------------
 def enable_tree_sorting(tree):
-    """Сортировка Treeview по колонкам с чередованием по убыванию/возрастанию, с сохранением иерархии."""
-    sort_states = {col: False for col in tree["columns"]}  # False = сначала по убыванию
+    """Сортировка Treeview по колонкам, включая #0 (Объект), с рекурсией и сохранением иерархии."""
+    sort_states = {"#0": False}  # состояние сортировки для #0
+    for col in tree["columns"]:
+        sort_states[col] = False
 
     def sort_column(col):
         reverse = sort_states[col]
 
-        def sort_level(item_ids):
-            # Сортируем элементы текущего уровня
-            l = []
-            for iid in item_ids:
+        def get_value(iid):
+            if col == "#0":
+                return tree.item(iid, "text").lower()
+            else:
+                val = tree.set(iid, col)
                 try:
-                    v = float(tree.set(iid, col))
+                    return float(val)
                 except ValueError:
-                    v = tree.set(iid, col)
-                l.append((v, iid))
-            l.sort(key=lambda t: t[0], reverse=reverse)
+                    return val.lower()
 
-            # Переставляем элементы на текущем уровне
-            for index, (_, iid) in enumerate(l):
+        def sort_level(item_ids):
+            arr = [(get_value(iid), iid) for iid in item_ids]
+            arr.sort(key=lambda x: x[0], reverse=reverse)
+
+            for index, (_, iid) in enumerate(arr):
                 tree.move(iid, tree.parent(iid), index)
-                # Рекурсивно сортируем детей
                 sort_level(tree.get_children(iid))
 
-        sort_level(tree.get_children(''))  # начинаем с корня
-        sort_states[col] = not reverse  # меняем направление для следующего клика
+        sort_level(tree.get_children(""))
+        sort_states[col] = not reverse
 
+    # Навесить колбэки
+    tree.heading("#0", text="Объект", command=lambda: sort_column("#0"))
     for col in tree["columns"]:
         tree.heading(col, command=lambda c=col: sort_column(c))
