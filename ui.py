@@ -180,7 +180,7 @@ def _build_treeview(app):
         "Lmax": "Макс. потери",
         "ExpectedMin": "Ожидаемые мин. потери",
         "ExpectedMax": "Ожидаемые макс. потери",
-        "Severity": "Тяжесть",
+        "Severity": "Вес",
         "Risk": "Риск"
     }
 
@@ -338,9 +338,42 @@ def on_save_risk(app):
     _update_total_label(app)
     save_nodes(app.nodes)
 
-def on_report(app):
+UI_TO_KEY = {
+    "Объект": "Объект",
+    "Вероятность": "P",
+    "Мин. потери": "Lmin",
+    "Макс. потери": "Lmax",
+    "Ожидаемый мин. потери": "ExpectedMin",
+    "Ожидаемый макс. потери": "ExpectedMax",
+    "Вес": "Severity",
+    "Риск": "Risk"
+}
+
+def on_report(app, sort_column="Risk", sort_order="Убыванию"):
     try:
-        generate_pdf(list(app.nodes.values()))
+        nodes_list = list(app.nodes.values())
+
+        sort_key = UI_TO_KEY.get(sort_column, "Risk")
+        reverse = sort_order == "Убыванию"
+
+        def get_key(n):
+            mapping = {
+                "Объект": n.name.lower(),
+                "P": n.prob,
+                "Lmin": n.loss_min,
+                "Lmax": n.loss_max,
+                "ExpectedMin": (n.prob or 0.0) * (n.loss_min or 0.0),
+                "ExpectedMax": (n.prob or 0.0) * (n.loss_max or 0.0),
+                "Severity": n.severity,
+                "Risk": (n.prob or 0.0) * (n.severity or 1.0)
+            }
+            return mapping.get(sort_key, 0)
+
+        nodes_list.sort(key=get_key, reverse=reverse)
+        print("sort_column combobox:", sort_column)
+        print("mapped key:", sort_key)
+        print("sort_order:", sort_order)
+        generate_pdf(nodes_list, sort_column=sort_column, sort_order=sort_order)
         messagebox.showinfo("Готово","Файл risk_report_magnit.pdf успешно создан.")
     except Exception as e:
         messagebox.showerror("Ошибка", str(e))
@@ -390,10 +423,33 @@ def build_ui(app):
     frame_report = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
     frame_report.grid(row=1, column=2, sticky="nwe", padx=4)
     frame_report.columnconfigure(0, weight=1)
+
     ttk.Label(frame_report, text="Генерация отчёта", style="Section.TLabel").grid(row=0, column=0, sticky="w")
-    ttk.Button(frame_report, text="Сделать отчёт (PDF)", style="Accent.TButton", command=lambda: on_report(app)).grid(row=1, column=0, sticky="we", pady=2)
+
+    # --- Выбор столбца и направления сортировки ---
+    ttk.Label(frame_report, text="Сортировать PDF по:", font=("Segoe UI", 9, "bold"), background="#ffffff") \
+        .grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+    columns_options = ["Объект", "Вероятность", "Мин. потери", "Макс. потери", "Ожидаемый мин. потери", "Ожидаемый макс. потери", "Вес", "Риск"]
+    app.pdf_sort_column = tk.StringVar(value="Риск")  # по умолчанию "Risk"
+    ttk.Combobox(frame_report, textvariable=app.pdf_sort_column, values=columns_options, state="readonly") \
+        .grid(row=2, column=0, sticky="we", pady=1)
+
+    app.pdf_sort_order = tk.StringVar(value="Убыванию")  # по умолчанию убывание
+    ttk.Combobox(frame_report, textvariable=app.pdf_sort_order, values=["Возрастанию", "Убыванию"], state="readonly") \
+        .grid(row=3, column=0, sticky="we", pady=1)
+
+    # --- Кнопка генерации PDF с сортировкой ---
+    ttk.Button(frame_report, text="Сделать PDF", style="Accent.TButton",
+               command=lambda: on_report(app, sort_column=app.pdf_sort_column.get(), sort_order=app.pdf_sort_order.get())) \
+        .grid(row=4, column=0, sticky="we", pady=2)
+
+    # Проверка наличия reportlab
     if not REPORTLAB_AVAILABLE:
-        ttk.Label(frame_report, text="(для PDF установите reportlab)", foreground="#dc2626", background="#ffffff").grid(row=2, column=0, sticky="w")
+        ttk.Label(frame_report,
+                  text="(для PDF установите reportlab: pip install reportlab)",
+                  foreground="#dc2626",
+                  background="#ffffff").grid(row=5, column=0, sticky="w", pady=(2, 6))
 
     # ----------- 4. Итоговая оценка -----------
     frame_total = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
@@ -447,3 +503,90 @@ def enable_tree_sorting(tree):
     tree.heading("#0", text="Объект", command=lambda: sort_column("#0"))
     for col in tree["columns"]:
         tree.heading(col, command=lambda c=col: sort_column(c))
+
+def _recalc_parents_only(app):
+    """Пересчитывает только родительские узлы от всех листьев вверх."""
+    for node_id in app.nodes:
+        recalc_tree_up(app, node_id)
+    _refresh_tree(app)
+
+def ui_on_duplicate(app):
+    if app.selected_id is None or app.selected_id == 1:
+        return
+    import copy
+    old_node = app.nodes[app.selected_id]
+
+    def duplicate_node(node_id, parent_id):
+        nonlocal app
+        old = app.nodes[node_id]
+        new_id = app.next_id
+        app.next_id += 1
+        new_node = copy.deepcopy(old)
+        new_node.id = new_id
+        new_node.parent_id = parent_id
+        new_node.children = []
+        app.nodes[new_id] = new_node
+
+        if parent_id:
+            app.nodes[parent_id].children.append(new_id)
+
+        for cid in old.children:
+            duplicate_node(cid, new_id)
+
+        return new_id
+
+    new_root_id = duplicate_node(app.selected_id, app.nodes[app.selected_id].parent_id)
+    _refresh_tree(app)
+
+def ui_on_move_up(app):
+    if app.selected_id is None or app.selected_id == 1:
+        return
+    node = app.nodes[app.selected_id]
+    parent = app.nodes.get(node.parent_id)
+    if not parent:
+        return
+    idx = parent.children.index(node.id)
+    if idx > 0:
+        parent.children[idx], parent.children[idx-1] = parent.children[idx-1], parent.children[idx]
+        _refresh_tree(app)
+
+def ui_on_move_down(app):
+    if app.selected_id is None or app.selected_id == 1:
+        return
+    node = app.nodes[app.selected_id]
+    parent = app.nodes.get(node.parent_id)
+    if not parent:
+        return
+    idx = parent.children.index(node.id)
+    if idx < len(parent.children) - 1:
+        parent.children[idx], parent.children[idx+1] = parent.children[idx+1], parent.children[idx]
+        _refresh_tree(app)
+
+def ui_on_toggle_expand(app):
+    selected = app.tree.selection()
+    if not selected:
+        return
+    for item in selected:
+        is_open = app.tree.item(item, "open")
+        app.tree.item(item, open=not is_open)
+
+def ui_on_search(app):
+    query = app.entry_name.get().strip().lower()
+    if not query:
+        return
+    for item, node_id in app.item_to_id.items():
+        node = app.nodes[node_id]
+        if query in node.name.lower():
+            app.tree.selection_set(item)
+            app.tree.see(item)
+            app.selected_id = node_id
+            _sync_inputs_with_selection(app)
+            break
+
+def ui_on_undo(app):
+    # Заглушка
+    print("Undo not implemented yet")
+
+def ui_on_redo(app):
+    # Заглушка
+    print("Redo not implemented yet")
