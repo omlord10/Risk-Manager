@@ -26,6 +26,16 @@ class RiskAnalyzerMagnitApp:
         # Построение интерфейса
         build_ui(self)
 
+        # --- Привязка клавиши Del ---
+        self.root.bind("<Delete>", self._on_delete_key)
+
+        # --- Функция, которая вызывается при нажатии Del ---
+
+    def _on_delete_key(self, event=None):
+        # Используем уже существующую функцию удаления из ui.py
+        from ui import on_delete
+        on_delete(self)
+
     def on_report(self):
         if not REPORTLAB_AVAILABLE:
             messagebox.showerror(

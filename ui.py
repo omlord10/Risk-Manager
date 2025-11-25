@@ -55,12 +55,13 @@ def _init_style(app):
 
 # ----------------- Вспомогательные функции -----------------
 def _refresh_tree(app):
-    # 1. Сохранить открытые узлы
-    open_items = set()
+    # 1. Сохранить открытые узлы по node_id
+    open_nodes = set()
 
     def collect(item):
-        if app.tree.item(item, "open"):
-            open_items.add(item)
+        node_id = app.item_to_id.get(item)
+        if node_id and app.tree.item(item, "open"):
+            open_nodes.add(node_id)
         for c in app.tree.get_children(item):
             collect(c)
 
@@ -69,6 +70,7 @@ def _refresh_tree(app):
 
     # 2. Сохранить выделение
     old_selection = app.tree.selection()
+    old_selection_ids = [app.item_to_id.get(i) for i in old_selection if i in app.item_to_id]
 
     # 3. Очистить
     for item in app.tree.get_children():
@@ -91,16 +93,17 @@ def _refresh_tree(app):
         app.id_to_item[node_id] = item
         for cid in node.children:
             insert(cid, item)
-        # восстанавливаем раскрытие
-        if node_id in open_items:
+        # восстанавливаем раскрытие по node_id
+        if node_id in open_nodes:
             app.tree.item(item, open=True)
 
     insert(1)
 
     # 5. Восстановить выделение
-    if old_selection:
+    if old_selection_ids:
+        new_selection = [app.id_to_item[nid] for nid in old_selection_ids if nid in app.id_to_item]
         try:
-            app.tree.selection_set(old_selection)
+            app.tree.selection_set(new_selection)
         except Exception:
             pass
 
@@ -122,15 +125,32 @@ def _recalc_and_update_tree(app):
     update_node_rec(1)
 
 def _update_total_label(app):
+    # Считаем только листья
     def calc_lower(node_id):
         node = app.nodes[node_id]
-        return (node.prob or 0.0)*(node.loss_min or 0.0) + sum(calc_lower(cid) for cid in node.children)
+        if not node.children:  # если нет детей — это лист
+            return (node.prob or 0.0)*(node.loss_min or 0.0)
+        return sum(calc_lower(cid) for cid in node.children)
+
     def calc_upper(node_id):
         node = app.nodes[node_id]
-        return (node.prob or 0.0)*(node.loss_max or 0.0) + sum(calc_upper(cid) for cid in node.children)
+        if not node.children:
+            return (node.prob or 0.0)*(node.loss_max or 0.0)
+        return sum(calc_upper(cid) for cid in node.children)
+
     total_lower = calc_lower(1)
     total_upper = calc_upper(1)
-    app.label_total.config(text=f"ΣLower группы: {total_lower:.2f} руб.\nΣUpper группы: {total_upper:.2f} руб.")
+
+    # Считаем города и улицы
+    cities = sum(1 for cid in app.nodes[1].children)
+    streets = sum(len(app.nodes[cid].children) for cid in app.nodes[1].children)
+
+    app.label_total.config(text=(
+        f"Ожидаемые мин. потери: {total_lower:.2f} руб.\n"
+        f"Ожидаемые макс. потери: {total_upper:.2f} руб.\n"
+        f"Городов: {cities}\n"
+        f"Магазины (улицы): {streets}"
+    ))
 
 def _sync_inputs_with_selection(app):
     node = app.nodes[app.selected_id]
@@ -153,13 +173,13 @@ def _sync_inputs_with_selection(app):
 
 # ----------------- Дерево -----------------
 def _build_treeview(app):
-    columns = ("P", "Lmin", "Lmax", "Lower", "Upper", "Severity", "Risk")
+    columns = ("P", "Lmin", "Lmax", "ExpectedMin", "ExpectedMax", "Severity", "Risk")
     headers = {
         "P": "Вероятность",
         "Lmin": "Мин. потери",
         "Lmax": "Макс. потери",
-        "Lower": "Lower",
-        "Upper": "Upper",
+        "ExpectedMin": "Ожидаемые мин. потери",
+        "ExpectedMax": "Ожидаемые макс. потери",
         "Severity": "Тяжесть",
         "Risk": "Риск"
     }
@@ -174,8 +194,8 @@ def _build_treeview(app):
     app.tree.column("P", width=60, anchor="center")
     app.tree.column("Lmin", width=80, anchor="e")
     app.tree.column("Lmax", width=80, anchor="e")
-    app.tree.column("Lower", width=80, anchor="e")
-    app.tree.column("Upper", width=80, anchor="e")
+    app.tree.column("ExpectedMin", width=120, anchor="e")
+    app.tree.column("ExpectedMax", width=120, anchor="e")
     app.tree.column("Severity", width=70, anchor="center")
     app.tree.column("Risk", width=70, anchor="e")
     app.tree.pack(fill="both", expand=True)
@@ -184,7 +204,6 @@ def _build_treeview(app):
     app.id_to_item = {}
 
     _refresh_tree(app)
-
 
 # ----------------- События / Обработчики -----------------
 def on_select(app, event=None):
@@ -197,11 +216,11 @@ def on_select(app, event=None):
     _sync_inputs_with_selection(app)
 
 def recalc_tree_up(app, node_id):
-    """Рекурсивно пересчитывает все узлы от выбранного до корня."""
+    """Рекурсивно пересчитывает узлы от выбранного до корня по средним значениям детей."""
     if node_id is None:
         return
     node = app.nodes[node_id]
-    # если есть дети — пересчитываем текущий узел по детям
+
     if node.children:
         total_prob = 0.0
         total_loss_min = 0.0
@@ -225,9 +244,10 @@ def recalc_tree_up(app, node_id):
             node.loss_min = 0.0
             node.loss_max = 0.0
             node.severity = 1.0
-    # поднимаемся к родителю
-    recalc_tree_up(app, node.parent_id)
 
+    # Рекурсивно поднимаемся к родителю
+    if node.parent_id:
+        recalc_tree_up(app, node.parent_id)
 
 def on_add(app):
     if app.selected_id is None:
@@ -238,17 +258,15 @@ def on_add(app):
         messagebox.showwarning("Пустое имя","Введите название блока.")
         return
 
-    # Создаём новый объект
     new_id = app.next_id
     app.next_id += 1
     new_node = RiskNode(id=new_id, name=name, parent_id=app.selected_id)
     app.nodes[new_id] = new_node
     app.nodes[app.selected_id].children.append(new_id)
 
-    # Сразу пересчёт для родительского города
+    # Пересчёт родителя
     recalc_tree_up(app, app.selected_id)
 
-    # Обновляем дерево и сохраняем
     _refresh_tree(app)
     save_nodes(app.nodes)
 
@@ -269,19 +287,33 @@ def on_delete(app):
         return
     if not messagebox.askyesno("Подтверждение удаления","Удалить выбранный узел и все его дочерние элементы?"):
         return
+
     def delete_rec(nid):
         node = app.nodes[nid]
         for cid in list(node.children):
             delete_rec(cid)
         del app.nodes[nid]
+
     parent_id = app.nodes[app.selected_id].parent_id
     if parent_id:
         app.nodes[parent_id].children = [cid for cid in app.nodes[parent_id].children if cid != app.selected_id]
+
     delete_rec(app.selected_id)
+
+    # После удаления сразу пересчитываем родителя
+    if parent_id:
+        recalc_tree_up(app, parent_id)
+
     app.selected_id = 1
     _refresh_tree(app)
     _sync_inputs_with_selection(app)
     save_nodes(app.nodes)
+
+# ----------------- Кнопка "Обновить параметры" -----------------
+def on_recalc(app):
+    """Принудительно пересчитывает средние значения по всем родителям."""
+    recalc_tree_up(app, 1)
+    _refresh_tree(app)
 
 def on_save_risk(app):
     if app.selected_id is None or app.selected_id == 1: return
@@ -338,6 +370,7 @@ def build_ui(app):
     ttk.Button(frame_manage, text="Добавить", style="Accent.TButton", command=lambda: on_add(app)).grid(row=2, column=0, sticky="we", pady=1)
     ttk.Button(frame_manage, text="Переименовать", style="Ghost.TButton", command=lambda: on_rename(app)).grid(row=3, column=0, sticky="we", pady=1)
     ttk.Button(frame_manage, text="Удалить выбранный", style="Danger.TButton", command=lambda: on_delete(app)).grid(row=4, column=0, sticky="we", pady=1)
+    ttk.Button(frame_manage, text="Обновить параметры", style="Accent.TButton", command=lambda: on_recalc(app)).grid(row=5, column=0, sticky="we", pady=1)
 
     # ----------- 2. Параметры -----------
     frame_params = ttk.Frame(top_panel, style="TopPanel.TFrame", padding=6)
